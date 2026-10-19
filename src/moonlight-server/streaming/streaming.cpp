@@ -222,7 +222,11 @@ struct UDPSink {
 static void ensure_socket_open(UDPSink *udp_sink, bool is_video) {
   if (!udp_sink->socket->is_open()) {
     logs::log(logs::warning, "UDP Socket is not open");
-    udp_sink->socket->open(udp::v4());
+    if (udp_sink->client_endpoint && udp_sink->client_endpoint->address().is_v6()) {
+      udp_sink->socket->open(udp::v6());
+    } else {
+      udp_sink->socket->open(udp::v4());
+    }
     wolf::platform::configure_socket_for_streaming(*udp_sink->socket, is_video);
     wolf::platform::enable_socket_qos(udp_sink->socket->native_handle(), is_video);
   }

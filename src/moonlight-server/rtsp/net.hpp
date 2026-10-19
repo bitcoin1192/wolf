@@ -5,6 +5,7 @@
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/shared_ptr.hpp>
+#include <helpers/utils.hpp>
 #include <rtsp/commands.hpp>
 #include <state/sessions.hpp>
 #include <string_view>
@@ -73,7 +74,8 @@ public:
       if (session.rtsp_fake_ip == packet.request.uri.ip || host_option == session.rtsp_fake_ip) {
         logs::log(logs::debug, "[RTSP] found session by matching payload: {}", session.rtsp_fake_ip);
         return session;
-      } else if ((host_option == "0.0.0.0" || host_option.empty()) && session.ip == user_ip) {
+      } else if ((host_option == "0.0.0.0" || host_option == "::" || host_option == "[::]" || host_option.empty()) &&
+                 session.ip == user_ip) {
         logs::log(logs::debug, "[RTSP] found session by matching IP: {}", session.ip);
         return session;
       }
@@ -102,7 +104,13 @@ public:
       close();
       return;
     }
-    std::string user_ip = remote.address().to_string();
+    auto client_addr = remote.address();
+    std::string user_ip;
+    if (client_addr.is_v6() && client_addr.to_v6().is_v4_mapped()) {
+      user_ip = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, client_addr.to_v6()).to_string();
+    } else {
+      user_ip = client_addr.to_string();
+    }
     logs::log(logs::trace, "[RTSP] received connection from IP: {}", user_ip);
     receive_message([self = shared_from_this(), user_ip](auto parsed_msg) {
       if (parsed_msg) {
@@ -230,11 +238,58 @@ protected:
 class tcp_server {
 public:
   tcp_server(boost::asio::io_context &io_context, int port, state::SessionsAtoms state)
-      : io_context_(io_context), acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
-        stream_sessions(std::move(state)) {
-    acceptor_.set_option(boost::asio::socket_base::reuse_address{true});
+      : io_context_(io_context), acceptor_(io_context), stream_sessions(std::move(state)) {
+    auto bind_ip = utils::get_env("WOLF_BIND_IP", "::");
+    boost::system::error_code ec;
+    auto addr = boost::asio::ip::make_address(bind_ip, ec);
+    if (ec) {
+      logs::log(logs::warning, "[RTSP] Invalid WOLF_BIND_IP '{}', falling back to ::", bind_ip);
+      addr = boost::asio::ip::address_v6::any();
+    }
+
+    try_bind(addr, port);
     acceptor_.listen(4096);
     start_accept();
+  }
+
+private:
+  void try_bind(const boost::asio::ip::address &addr, int port) {
+    boost::system::error_code ec;
+    tcp::endpoint endpoint(addr, port);
+    acceptor_.open(endpoint.protocol(), ec);
+    if (ec) {
+      logs::log(logs::warning, "[RTSP] Failed to open acceptor for {}: {}", addr.to_string(), ec.message());
+      fallback_v4(port);
+      return;
+    }
+
+    acceptor_.set_option(boost::asio::socket_base::reuse_address{true}, ec);
+    if (addr.is_v6()) {
+      acceptor_.set_option(boost::asio::ip::v6_only{false}, ec);
+      if (ec) {
+        logs::log(logs::debug, "[RTSP] v6_only(false) option error (might already be dual-stack): {}", ec.message());
+      }
+    }
+
+    acceptor_.bind(endpoint, ec);
+    if (ec) {
+      logs::log(logs::warning, "[RTSP] Failed to bind to {}:{}: {}", addr.to_string(), port, ec.message());
+      if (addr.is_v6() && addr == boost::asio::ip::address_v6::any()) {
+        fallback_v4(port);
+      } else {
+        throw boost::system::system_error(ec);
+      }
+    }
+  }
+
+  void fallback_v4(int port) {
+    boost::system::error_code ec;
+    acceptor_.close(ec);
+    tcp::endpoint ep(tcp::v4(), port);
+    acceptor_.open(ep.protocol());
+    acceptor_.set_option(boost::asio::socket_base::reuse_address{true});
+    acceptor_.bind(ep);
+    logs::log(logs::info, "[RTSP] Falling back to IPv4 binding on port: {}", port);
   }
 
 private:

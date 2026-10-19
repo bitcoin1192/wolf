@@ -207,7 +207,8 @@ void run() {
 
   // Control
   std::thread([sessions = local_state->running_sessions, ev_bus = local_state->event_bus]() {
-    control::run_control(state::get_port(state::CONTROL_PORT), sessions, ev_bus);
+    auto bind_ip = utils::get_env("WOLF_BIND_IP", "::");
+    control::run_control(state::get_port(state::CONTROL_PORT), sessions, ev_bus, 20, 1000ms, bind_ip);
   }).detach();
 
   // RTP

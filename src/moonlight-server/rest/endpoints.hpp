@@ -45,7 +45,14 @@ void not_found(const std::shared_ptr<typename SimpleWeb::Server<T>::Response> &r
 template <class T>
 std::string get_host_ip(const std::shared_ptr<typename SimpleWeb::Server<T>::Request> &request,
                         const immer::box<state::AppState> &state) {
-  return state->host->internal_ip.value_or(request->local_endpoint().address().to_string());
+  if (state->host->internal_ip) {
+    return *state->host->internal_ip;
+  }
+  auto addr = request->local_endpoint().address();
+  if (addr.is_v6() && addr.to_v6().is_v4_mapped()) {
+    return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6()).to_string();
+  }
+  return addr.to_string();
 }
 
 template <class T>
@@ -220,7 +227,7 @@ void pair(const std::shared_ptr<typename SimpleWeb::Server<SimpleWeb::HTTP>::Res
   auto salt = get_header(headers, "salt");
   auto client_cert_str = get_header(headers, "clientcert");
   auto client_id = get_header(headers, "uniqueid");
-  auto client_ip = request->remote_endpoint().address().to_string();
+  auto client_ip = get_client_ip<SimpleWeb::HTTP>(request);
 
   if (!client_id) {
     send_xml<SimpleWeb::HTTP>(response,

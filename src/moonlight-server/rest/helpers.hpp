@@ -18,7 +18,11 @@ inline std::string xml_to_str(const XML &xml) {
 }
 
 template <class T> std::string get_client_ip(std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request) {
-  return request->remote_endpoint().address().to_string();
+  auto addr = request->remote_endpoint().address();
+  if (addr.is_v6() && addr.to_v6().is_v4_mapped()) {
+    return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6()).to_string();
+  }
+  return addr.to_string();
 }
 
 /**

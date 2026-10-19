@@ -23,7 +23,7 @@ using namespace wolf::core;
  */
 void startServer(HttpServer *server, const immer::box<state::AppState> state, int port) {
   server->config.port = port;
-  server->config.address = "0.0.0.0";
+  server->config.address = utils::get_env("WOLF_BIND_IP", "::");
   server->default_resource["GET"] = endpoints::not_found<SimpleWeb::HTTP>;
   server->default_resource["POST"] = endpoints::not_found<SimpleWeb::HTTP>;
 
@@ -58,7 +58,7 @@ void startServer(HttpServer *server, const immer::box<state::AppState> state, in
   server->resource["^/unpair$"]["GET"] = [&state](auto resp, auto req) {
     SimpleWeb::CaseInsensitiveMultimap headers = req->parse_query_string();
     auto client_id = get_header(headers, "uniqueid");
-    auto client_ip = req->remote_endpoint().address().to_string();
+    auto client_ip = get_client_ip<SimpleWeb::HTTP>(req);
     auto cache_key = client_id.value() + "@" + client_ip;
 
     logs::log(logs::info, "Unpairing: {}", cache_key);
@@ -90,7 +90,17 @@ void startServer(HttpServer *server, const immer::box<state::AppState> state, in
       });
 
   // Start server
-  server->start([](unsigned short port) { logs::log(logs::info, "HTTP server listening on port: {} ", port); });
+  try {
+    server->start([](unsigned short port) { logs::log(logs::info, "HTTP server listening on port: {} ", port); });
+  } catch (const std::exception &e) {
+    if (server->config.address == "::") {
+      logs::log(logs::warning, "Failed to bind HTTP server to [::], falling back to 0.0.0.0: {}", e.what());
+      server->config.address = "0.0.0.0";
+      server->start([](unsigned short port) { logs::log(logs::info, "HTTP server listening on port: {} ", port); });
+    } else {
+      throw;
+    }
+  }
 
   pair_handler.unregister();
 }
@@ -117,7 +127,7 @@ void reply_unauthorized(const std::shared_ptr<typename SimpleWeb::ServerBase<Sim
 
 void startServer(HttpsServer *server, const immer::box<state::AppState> state, int port) {
   server->config.port = port;
-  server->config.address = "0.0.0.0";
+  server->config.address = utils::get_env("WOLF_BIND_IP", "::");
   server->default_resource["GET"] = endpoints::not_found<SimpleWeb::HTTPS>;
   server->default_resource["POST"] = endpoints::not_found<SimpleWeb::HTTPS>;
 
@@ -178,7 +188,17 @@ void startServer(HttpsServer *server, const immer::box<state::AppState> state, i
     }
   };
 
-  server->start([](unsigned short port) { logs::log(logs::info, "HTTPS server listening on port: {} ", port); });
+  try {
+    server->start([](unsigned short port) { logs::log(logs::info, "HTTPS server listening on port: {} ", port); });
+  } catch (const std::exception &e) {
+    if (server->config.address == "::") {
+      logs::log(logs::warning, "Failed to bind HTTPS server to [::], falling back to 0.0.0.0: {}", e.what());
+      server->config.address = "0.0.0.0";
+      server->start([](unsigned short port) { logs::log(logs::info, "HTTPS server listening on port: {} ", port); });
+    } else {
+      throw;
+    }
+  }
 }
 
 } // namespace HTTPServers

@@ -37,11 +37,18 @@ bool init() {
 }
 
 enet_host create_host(std::string_view host, std::uint16_t port, std::size_t peers) {
+  int family = (host.find(':') != std::string_view::npos) ? AF_INET6 : AF_INET;
   ENetAddress addr;
   enet_address_set_host(&addr, host.data());
   enet_address_set_port(&addr, port);
 
-  auto enet_host = enet_host_create(AF_INET, &addr, peers, 0, 0, 0);
+  auto enet_host = enet_host_create(family, &addr, peers, 0, 0, 0);
+  if (enet_host == nullptr && family == AF_INET6) {
+    logs::log(logs::warning, "[ENET] Failed to create ENet host on IPv6, falling back to IPv4");
+    enet_address_set_host(&addr, "0.0.0.0");
+    enet_host = enet_host_create(AF_INET, &addr, peers, 0, 0, 0);
+  }
+
   if (enet_host == nullptr) {
     logs::log(logs::error, "An error occurred while trying to create an ENet server host.");
   }
@@ -57,10 +64,17 @@ std::pair<std::string /* ip */, int /* port */> get_ip(const sockaddr *const ip_
   char data[INET6_ADDRSTRLEN];
 
   auto family = ip_addr->sa_family;
-  std::uint16_t port;
+  std::uint16_t port = 0;
   if (family == AF_INET6) {
-    inet_ntop(AF_INET6, &((sockaddr_in6 *)ip_addr)->sin6_addr, data, INET6_ADDRSTRLEN);
-    port = ((sockaddr_in6 *)ip_addr)->sin6_port;
+    auto sin6 = (const sockaddr_in6 *)ip_addr;
+    if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+      struct in_addr v4_addr;
+      memcpy(&v4_addr, &sin6->sin6_addr.s6_addr[12], sizeof(v4_addr));
+      inet_ntop(AF_INET, &v4_addr, data, INET_ADDRSTRLEN);
+    } else {
+      inet_ntop(AF_INET6, &sin6->sin6_addr, data, INET6_ADDRSTRLEN);
+    }
+    port = sin6->sin6_port;
   }
 
   if (family == AF_INET) {
