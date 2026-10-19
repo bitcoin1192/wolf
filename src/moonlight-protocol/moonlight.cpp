@@ -187,8 +187,12 @@ XML launch_success(const std::string &local_ip, const std::string &rtsp_port) {
   // TODO: implement error on launch
   XML resp;
 
+  auto formatted_ip = (local_ip.find(':') != std::string::npos && local_ip.front() != '[')
+                          ? "[" + local_ip + "]"
+                          : local_ip;
+
   resp.put("root.<xmlattr>.status_code", 200);
-  resp.put("root.sessionUrl0", "rtsp://" + local_ip + ":" + rtsp_port);
+  resp.put("root.sessionUrl0", "rtsp://" + formatted_ip + ":" + rtsp_port);
   resp.put("root.gamesession", 1);
 
   return resp;
@@ -197,8 +201,12 @@ XML launch_success(const std::string &local_ip, const std::string &rtsp_port) {
 XML launch_resume(const std::string &local_ip, const std::string &rtsp_port) {
   XML resp;
 
+  auto formatted_ip = (local_ip.find(':') != std::string::npos && local_ip.front() != '[')
+                          ? "[" + local_ip + "]"
+                          : local_ip;
+
   resp.put("root.<xmlattr>.status_code", 200);
-  resp.put("root.sessionUrl0", "rtsp://" + local_ip + ":" + rtsp_port);
+  resp.put("root.sessionUrl0", "rtsp://" + formatted_ip + ":" + rtsp_port);
   resp.put("root.resume", 1);
 
   return resp;

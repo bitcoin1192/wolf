@@ -86,7 +86,7 @@ std::optional<RTSP_PACKET> parse(std::string_view msg) {
 
     URI <- PROTOCOL '://' IP? ':' PORT
     PROTOCOL <- < [a-z]i+ >
-    IP <-  < [0-9.]+ >
+    IP <- '[' < [a-fA-F0-9:.]+ > ']' / < [a-zA-Z0-9.-]+ >
     PORT <- < [0-9]+ >
 
     #####
@@ -187,7 +187,11 @@ std::string to_string(const RTSP_PACKET &pkt) {
     stream << pkt.request.cmd << " ";
 
     if (pkt.request.type == TARGET_URI) {
-      stream << pkt.request.uri.protocol << "://" << pkt.request.uri.ip << ":" << pkt.request.uri.port;
+      if (pkt.request.uri.ip.find(':') != std::string::npos && pkt.request.uri.ip.front() != '[') {
+        stream << pkt.request.uri.protocol << "://[" << pkt.request.uri.ip << "]:" << pkt.request.uri.port;
+      } else {
+        stream << pkt.request.uri.protocol << "://" << pkt.request.uri.ip << ":" << pkt.request.uri.port;
+      }
     } else {
       stream << "streamid=" << pkt.request.stream.type << pkt.request.stream.params;
     }
