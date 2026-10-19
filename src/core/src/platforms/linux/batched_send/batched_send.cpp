@@ -226,7 +226,9 @@ void enable_socket_qos(int native_socket, bool is_video) {
   dscp <<= 2;                    // Shift to TOS field position
 
   if (setsockopt(native_socket, IPPROTO_IP, IP_TOS, &dscp, sizeof(dscp)) < 0) {
-    logs::log(logs::debug, "Failed to set IP_TOS/DSCP");
+    if (setsockopt(native_socket, IPPROTO_IPV6, IPV6_TCLASS, &dscp, sizeof(dscp)) < 0) {
+      logs::log(logs::debug, "Failed to set IP_TOS/IPV6_TCLASS DSCP");
+    }
   }
 }
 
